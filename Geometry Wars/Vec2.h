@@ -21,6 +21,7 @@ public:
 	void operator *= (const float);
 	void operator /= (const float);
 
-	float dist(const Vec2&) const;
+	float dist() const;
+	void normalize();
 };
 

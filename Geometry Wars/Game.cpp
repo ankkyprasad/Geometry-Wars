@@ -7,7 +7,6 @@ Game::Game(const std::string& config) {
 }
 
 void Game::init() {
-	// TODO: read in config file here
 	ConfigVariant cVariant = m_configReader.getData(ConfigReader::Type::Window);
 	WindowConfig wConfig = std::get<WindowConfig>(cVariant);
 
@@ -23,22 +22,23 @@ void Game::run() {
 	//		 some systems shouldn't (movement / input)
 
 	while (m_running) {
-		m_entities.update();
+		if (!m_paused) {
+			m_entities.update();
+			sEnemySpawner();
+			sMovement();
+			sCollision();
 
-		sEnemySpawner();
-		sMovement();
-		sCollision();
+			m_currentFrame++;
+		}
+
 		sUserInput();
 		sRender();
 
-		// increase the current frame
-		// may need to be moved when pause implemented
-		m_currentFrame++;
 	}
 }
 
 void Game::setPaused(bool paused) {
-	// TODO
+	m_paused = paused;
 }
 
 void Game::spawnPlayer() {
@@ -95,13 +95,25 @@ void Game::spawnSmallEnemies(std::shared_ptr<Entity> e) {
 }
 
 void Game::spawnBullet(std::shared_ptr<Entity> entity, const Vec2& target) {
-	// spawn enemy from the given entity to the target location
-
-	// TODO: implement the spawning of a bullet which travels towards the target
-	//		 - bullet speed is given as a scalar speed
-	//		 - you must set the velocity by using the formula in the notes
+	ConfigVariant bVariant = m_configReader.getData(ConfigReader::Type::Bullet);
+	BulletConfig bConfig = std::get<BulletConfig>(bVariant);
 
 	std::shared_ptr<Entity> e = m_entities.addEntity("bullet");
+
+	sf::Color fillColor(bConfig.FR, bConfig.FG, bConfig.FB);
+	sf::Color outlineColor(bConfig.OR, bConfig.OG, bConfig.OB);
+
+	Vec2 playerPos = entity->cTransform->pos;
+
+	// calculate bullet velocity
+	Vec2 distanceV(target.x - playerPos.x, target.y - playerPos.y);
+	distanceV.normalize();
+	Vec2 bulletVelocity(bConfig.S * distanceV.x, bConfig.S * distanceV.y);
+
+	e->cShape = std::make_shared<CShape>(bConfig.SR, bConfig.V, fillColor, outlineColor, bConfig.OT);
+	e->cCollision = std::make_shared<CCollision>(bConfig.CR);
+	e->cTransform = std::make_shared<CTransform>(0.0f, playerPos, bulletVelocity);
+	e->cLifespan = std::make_shared<CLifespan>(bConfig.L, bConfig.L);
 }
 
 void Game::spawnSpecialWeapon(std::shared_ptr<Entity> entity) {
@@ -110,7 +122,6 @@ void Game::spawnSpecialWeapon(std::shared_ptr<Entity> entity) {
 
 void Game::sMovement() {
 	// player movement
-
 	ConfigVariant cVariant = m_configReader.getData(ConfigReader::Type::Player);
 	PlayerConfig pConfig = std::get<PlayerConfig>(cVariant);
 
@@ -129,6 +140,12 @@ void Game::sMovement() {
 
 	// enemy movement
 	for (std::shared_ptr<Entity>& e : m_entities.getEntities("enemy")) {
+		e->cTransform->pos.x += e->cTransform->velocity.x;
+		e->cTransform->pos.y += e->cTransform->velocity.y;
+	}
+
+	// bullet movement
+	for (std::shared_ptr<Entity>& e : m_entities.getEntities("bullet")) {
 		e->cTransform->pos.x += e->cTransform->velocity.x;
 		e->cTransform->pos.y += e->cTransform->velocity.y;
 	}
@@ -167,7 +184,6 @@ void Game::sCollision() {
 	if (m_player->cTransform->pos.y - m_player->cCollision->radius <= 0) {
 		m_player->cTransform->pos.y = m_player->cCollision->radius;
 	}
-	
 
 	// enemies collision with walls
 	for (std::shared_ptr<Entity>& e : m_entities.getEntities("enemy")) {
@@ -182,9 +198,39 @@ void Game::sCollision() {
 		}
 	}
 
+	// bullet collision with walls
+	for (std::shared_ptr<Entity>& bullet : m_entities.getEntities("bullet")) {
+		if (bullet->cCollision->radius + bullet->cTransform->pos.x > m_window.getSize().x) {
+			bullet->destroy();
+		}
+	}
+
 	// bullet collision with enemies
+	for (std::shared_ptr<Entity>& bullet : m_entities.getEntities("bullet")) {
+		for (std::shared_ptr<Entity>& enemy : m_entities.getEntities("enemy")) {
+			Vec2 diffVec(bullet->cTransform->pos.x - enemy->cTransform->pos.x, bullet->cTransform->pos.y - enemy->cTransform->pos.y);
+			float dist = diffVec.dist();
+
+			if (dist <= bullet->cCollision->radius + enemy->cCollision->radius) {
+				enemy->destroy();
+				bullet->destroy();
+			}
+		}
+	}
 
 	// player collision with enemies
+	for (std::shared_ptr<Entity>& enemy : m_entities.getEntities("enemy")) {
+		Vec2 diffVec(enemy->cTransform->pos.x - m_player->cTransform->pos.x, enemy->cTransform->pos.y - m_player->cTransform->pos.y);
+		float dist = diffVec.dist();
+
+		if (dist <= enemy->cCollision->radius + m_player->cCollision->radius) {
+			m_player->destroy();
+			enemy->destroy();
+
+			spawnPlayer();
+		}
+	}
+
 }
 
 void Game::sEnemySpawner() {
@@ -240,7 +286,9 @@ void Game::sUserInput() {
 			case sf::Keyboard::D:
 				m_player->cInput->right = true;
 				break;
-
+			case sf::Keyboard::P:
+				setPaused(!m_paused);
+				break;
 			case sf::Keyboard::Escape:
 				m_running = false;
 			}
@@ -261,13 +309,16 @@ void Game::sUserInput() {
 				m_player->cInput->right = false;
 				break;
 			}
-
 		}
+
+		if (m_paused) {
+			continue;
+		}
+
 
 		if (event.type == sf::Event::MouseButtonPressed) {
 			if (event.mouseButton.button == sf::Mouse::Left) {
-				std::cout << "left button at (" << event.mouseButton.x << ", " << event.mouseButton.y << ")\n";
-				// call spawnBullet here
+				spawnBullet(m_player, Vec2(event.mouseButton.x, event.mouseButton.y));
 			}
 
 			if (event.mouseButton.button == sf::Mouse::Right) {
