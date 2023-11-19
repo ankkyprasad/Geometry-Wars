@@ -1,14 +1,18 @@
 #include "Game.h"
+#include "Util.h"
 
 Game::Game(const std::string& config) {
-	init(config);
+	m_configReader.readFromFile(config);
+	init();
 }
 
-void Game::init(const std::string& config) {
+void Game::init() {
 	// TODO: read in config file here
+	ConfigVariant cVariant = m_configReader.getData(ConfigReader::Type::Window);
+	WindowConfig wConfig = std::get<WindowConfig>(cVariant);
 
-	m_window.create(sf::VideoMode(1280, 720), "Geometry Wars");
-	m_window.setFramerateLimit(60);
+	m_window.create(sf::VideoMode(wConfig.W, wConfig.H), "Geometry Wars", wConfig.FS ? sf::Style::Fullscreen : sf::Style::Default);
+	m_window.setFramerateLimit(wConfig.FL);
 
 	spawnPlayer();
 }
@@ -38,20 +42,44 @@ void Game::setPaused(bool paused) {
 }
 
 void Game::spawnPlayer() {
-	// TODO: Finish adding all the properties of the player with the correct values from the config
+	ConfigVariant cVariant = m_configReader.getData(ConfigReader::Type::Player);
+	PlayerConfig pConfig = std::get<PlayerConfig>(cVariant);
 
 	std::shared_ptr<Entity> entity = m_entities.addEntity("player");
 
-	entity->cTransform = std::make_shared<CTransform>(10.0f, Vec2(200.0f,200.0f), Vec2(1.0f, 1.0f));
-	entity->cShape = std::make_shared<CShape>(30.0f, 8, sf::Color(10, 10, 10), sf::Color::Red, 4.0f);
+	sf::Color fillColor(pConfig.FR, pConfig.FG, pConfig.FB);
+	sf::Color outlineColor(pConfig.OR, pConfig.OG, pConfig.OB);
+
+	sf::Vector2u wSize = m_window.getSize();
+	Vec2 pPos(wSize.x / 2.0f, wSize.y / 2.0f);
+
+	entity->cTransform = std::make_shared<CTransform>(0.0f, pPos, Vec2(2.0f, 2.0f));
+	entity->cShape = std::make_shared<CShape>(pConfig.SR, pConfig.V, fillColor, outlineColor, pConfig.OT);
+	entity->cCollision = std::make_shared<CCollision>(pConfig.CR);
 	entity->cInput = std::make_shared<CInput>();
 
 	m_player = entity;
 }
 
 void Game::spawnEnemy() {
-	// TODO: make sure the enemy is spawned properly with the m_enemyconfig variables
-	//       the enemy must be spawned completely within the bounds of the window
+	ConfigVariant cVariant = m_configReader.getData(ConfigReader::Type::Enemy);
+	EnemyConfig eConfig = std::get<EnemyConfig>(cVariant);
+
+	std::shared_ptr<Entity> e = m_entities.addEntity("enemy");
+
+	sf::Color fillColor(Util::generateRandomValFromRange(0, 255), Util::generateRandomValFromRange(0, 255), Util::generateRandomValFromRange(0, 255));
+	sf::Color outlineColor(eConfig.OR, eConfig.OG, eConfig.OB);
+	int vertices = Util::generateRandomValFromRange(eConfig.VMIN, eConfig.VMAX);
+
+	sf::Vector2u wSize = m_window.getSize();
+	float mx = Util::generateRandomValFromRange((float) eConfig.SR, (float) wSize.x - eConfig.SR);
+	float my = Util::generateRandomValFromRange((float) eConfig.SR, (float) wSize.y - eConfig.SR);
+
+	float speed = Util::generateRandomValFromRange((float) eConfig.SMIN, (float) eConfig.SMAX);
+
+	e->cCollision = std::make_shared<CCollision>(eConfig.CR);
+	e->cShape = std::make_shared<CShape>(eConfig.SR, vertices, fillColor, outlineColor, eConfig.OT);
+	e->cTransform = std::make_shared<CTransform>(0, Vec2(mx, my), Vec2(speed, speed));
 
 	// record when the most recent enemy was spawned
 	m_lastEnemySpawnTime = m_currentFrame;
@@ -72,6 +100,8 @@ void Game::spawnBullet(std::shared_ptr<Entity> entity, const Vec2& target) {
 	// TODO: implement the spawning of a bullet which travels towards the target
 	//		 - bullet speed is given as a scalar speed
 	//		 - you must set the velocity by using the formula in the notes
+
+	std::shared_ptr<Entity> e = m_entities.addEntity("bullet");
 }
 
 void Game::spawnSpecialWeapon(std::shared_ptr<Entity> entity) {
@@ -79,13 +109,29 @@ void Game::spawnSpecialWeapon(std::shared_ptr<Entity> entity) {
 }
 
 void Game::sMovement() {
-	// TODO: implement all the entity movement in this function
-	//       you should read the m_player->cInput component to determine if the player is moving
+	// player movement
 
-	// sample movement speed update
+	ConfigVariant cVariant = m_configReader.getData(ConfigReader::Type::Player);
+	PlayerConfig pConfig = std::get<PlayerConfig>(cVariant);
 
-	//m_player->cTransform->pos.x += m_player->cTransform->velocity.x;
-	//m_player->cTransform->pos.y += m_player->cTransform->velocity.y;
+	if (m_player->cInput->up) {
+		m_player->cTransform->pos.y -= pConfig.S;
+	} else if (m_player->cInput->down) {
+		m_player->cTransform->pos.y += pConfig.S;
+	}
+
+	if (m_player->cInput->left) {
+		m_player->cTransform->pos.x -= pConfig.S;
+	}
+	else if (m_player->cInput->right) {
+		m_player->cTransform->pos.x += pConfig.S;
+	}
+
+	// enemy movement
+	for (std::shared_ptr<Entity>& e : m_entities.getEntities("enemy")) {
+		e->cTransform->pos.x += e->cTransform->velocity.x;
+		e->cTransform->pos.y += e->cTransform->velocity.y;
+	}
 }
 
 void Game::sLifespan() {
@@ -103,40 +149,79 @@ void Game::sLifespan() {
 }
 
 void Game::sCollision() {
-	// TODO: implement all proper collisions between entities
-	//		 be sure to use the collision radius, not the shape radius
+	sf::Vector2u wSize = m_window.getSize();
+
+	// player collision with walls
+	if (m_player->cTransform->pos.x + m_player->cCollision->radius >= wSize.x) {
+		m_player->cTransform->pos.x = wSize.x - m_player->cCollision->radius;
+	}
+
+	if (m_player->cTransform->pos.x - m_player->cCollision->radius <= 0) {
+		m_player->cTransform->pos.x = m_player->cCollision->radius;
+	}
+
+	if (m_player->cTransform->pos.y + m_player->cCollision->radius >= wSize.y) {
+		m_player->cTransform->pos.y = wSize.y - m_player->cCollision->radius;
+	}
+
+	if (m_player->cTransform->pos.y - m_player->cCollision->radius <= 0) {
+		m_player->cTransform->pos.y = m_player->cCollision->radius;
+	}
+	
+
+	// enemies collision with walls
+	for (std::shared_ptr<Entity>& e : m_entities.getEntities("enemy")) {
+		Vec2 pos = e->cTransform->pos;
+
+		if (pos.x - e->cCollision->radius <= 0 || pos.x + e->cCollision->radius >= wSize.x) {
+			e->cTransform->velocity.x *= -1.0f;
+		}
+
+		if (pos.y - e->cCollision->radius <= 0 || pos.y + e->cCollision->radius >= wSize.y) {
+			e->cTransform->velocity.y *= -1.0f;
+		}
+	}
+
+	// bullet collision with enemies
+
+	// player collision with enemies
 }
 
 void Game::sEnemySpawner() {
-	// TODO: code which implements enemy spawning should go here
-	// use (m_currentFrame - m_lastEnemySpawnTime) to determine
-	// how long it has been since the last enemy spawned
+	ConfigVariant cVariant = m_configReader.getData(ConfigReader::Type::Enemy);
+	EnemyConfig eConfig = std::get<EnemyConfig>(cVariant);
+
+	if (((m_currentFrame - m_lastEnemySpawnTime) % eConfig.SI) == 0) {
+		spawnEnemy();
+	}
 }
 
 void Game::sRender() {
-	// TODO: change the below code to draw all of the entities
-
 	m_window.clear();
 
-	m_player->cShape->shape.setPosition(m_player->cTransform->pos.x, m_player->cTransform->pos.y);
-	m_player->cTransform->angle += 1.0f;
-	m_player->cShape->shape.setRotation(m_player->cTransform->angle);
+	for (const std::shared_ptr<Entity>& e : m_entities.getEntities()) {
+		if (e->tag() == "player") {
+			continue;
+		}
 
+		e->cShape->shape.setPosition(e->cTransform->pos.x, e->cTransform->pos.y);
+		e->cTransform->angle += 1.0f;
+		e->cShape->shape.setRotation(e->cTransform->angle);
+
+		m_window.draw(e->cShape->shape);
+	}
+
+	m_player->cShape->shape.setPosition(m_player->cTransform->pos.x, m_player->cTransform->pos.y);
+	m_player->cTransform->angle += 3.0f;
+	m_player->cShape->shape.setRotation(m_player->cTransform->angle);
 
 	m_window.draw(m_player->cShape->shape);
 	m_window.display();
 }
 
 void Game::sUserInput() {
-	// TODO: handle user input here
-	//		 note that you should only be setting the player's input component variables here
-	//       you should not implement the player's movement logic here
-	//       the movement system will read the variables you set in this function
-
 	sf::Event event;
 	while (m_window.pollEvent(event)) {
-
-		// this event triggers when window is closed
 		if (event.type == sf::Event::Closed) {
 			m_running = false;
 		}
@@ -144,23 +229,37 @@ void Game::sUserInput() {
 		if (event.type == sf::Event::KeyPressed) {
 			switch (event.key.code) {
 			case sf::Keyboard::W:
-				std::cout << "W pressed\n";
-				// TODO: set player's input component "up" to true
-
+				m_player->cInput->up = true;
 				break;
-			default: break;
+			case sf::Keyboard::S:
+				m_player->cInput->down = true;
+				break;
+			case sf::Keyboard::A:
+				m_player->cInput->left = true;
+				break;
+			case sf::Keyboard::D:
+				m_player->cInput->right = true;
+				break;
+
+			case sf::Keyboard::Escape:
+				m_running = false;
 			}
 		}
 
 		if (event.type == sf::Event::KeyReleased) {
 			switch (event.key.code) {
 			case sf::Keyboard::W:
-				std::cout << "W released\n";
-				// TODO: set player's input component "up" to false
-
+				m_player->cInput->up = false;
 				break;
-			default: break;
-
+			case sf::Keyboard::S:
+				m_player->cInput->down = false;
+				break;
+			case sf::Keyboard::A:
+				m_player->cInput->left = false;
+				break;
+			case sf::Keyboard::D:
+				m_player->cInput->right = false;
+				break;
 			}
 
 		}

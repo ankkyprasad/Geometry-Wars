@@ -29,5 +29,13 @@ void EntityManager::update() {
 }
 
 void EntityManager::removeDeadEntities(EntityVec& entityVec) {
-    // TODO: remove dead entities
+    EntityVec newVec;
+
+    for (std::shared_ptr<Entity> e : entityVec) {
+        if (e->isActive()) {
+            newVec.push_back(e);
+        }
+    }
+
+    entityVec = newVec;
 }

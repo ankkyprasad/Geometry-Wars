@@ -8,8 +8,9 @@
 #include <sstream>
 
 struct WindowConfig {
-	int W, L, FL, FS;
+	int W, H, FL, FS;
 
+	WindowConfig();
 	WindowConfig(const std::vector<std::string>&);
 };
 
@@ -17,6 +18,7 @@ struct FontConfig {
 	std::string F;
 	int S, R, G, B;
 
+	FontConfig();
 	FontConfig(const std::vector<std::string>&);
 };
 
@@ -24,6 +26,7 @@ struct PlayerConfig {
 	int SR, CR, FR, FG, FB, OR, OG, OB, OT, V; 
 	float S; 
 
+	PlayerConfig();
 	PlayerConfig(const std::vector<std::string>&);
 };
 
@@ -31,6 +34,7 @@ struct EnemyConfig {
 	int SR, CR, OR, OG, OB, OT, VMIN, VMAX, L, SI; 
 	float SMIN, SMAX; 
 
+	EnemyConfig();
 	EnemyConfig(const std::vector<std::string>&);
 };
 
@@ -38,6 +42,7 @@ struct BulletConfig {
 	int SR, CR, FR, FG, FB, OR, OG, OB, OT, V, L; 
 	float S; 
 
+	BulletConfig();
 	BulletConfig(const std::vector<std::string>&);
 };
 
@@ -48,10 +53,11 @@ class ConfigReader {
 
 	enum Type { Window, Font, Player, Enemy, Bullet };
 
-	ConfigReader(const std::string&);
+	ConfigReader();
 
 	std::unordered_map<ConfigReader::Type, ConfigVariant> m_configMap;
 
 public:
-	ConfigVariant getReader(const ConfigReader::Type& type);
+	ConfigVariant getData(const ConfigReader::Type& type);
+	void readFromFile(const std::string& filename);
 };

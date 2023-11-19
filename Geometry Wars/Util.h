@@ -6,5 +6,7 @@
 
 namespace Util {
 std::vector<std::string> splitString(const std::string&);
+
+int generateRandomValFromRange(int, int);
 }
 

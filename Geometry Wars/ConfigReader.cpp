@@ -1,7 +1,13 @@
 #include "ConfigReader.h"
 #include "Util.h"
 
-ConfigReader::ConfigReader(const std::string& filename) {
+ConfigReader::ConfigReader() { }
+
+ConfigVariant ConfigReader::getData(const ConfigReader::Type& type) {
+	return m_configMap[type];
+}
+
+void ConfigReader::readFromFile(const std::string& filename) {
 	std::ifstream fin(filename);
 	std::string line;
 
@@ -14,7 +20,7 @@ ConfigReader::ConfigReader(const std::string& filename) {
 		std::vector<std::string> words = Util::splitString(line);
 
 		std::string key = words.at(0);
-		
+
 		if (key == "Window") {
 			m_configMap[ConfigReader::Type::Window] = WindowConfig(words);
 		}
@@ -33,14 +39,21 @@ ConfigReader::ConfigReader(const std::string& filename) {
 	}
 }
 
-ConfigVariant ConfigReader::getReader(const ConfigReader::Type& type) {
-	return m_configMap[type];
-}
+WindowConfig::WindowConfig() : W(0), H(0), FL(0), FS(0) { }
+
+FontConfig::FontConfig() : F(""), S(0), R(0), G(0), B(0) { }
+
+PlayerConfig::PlayerConfig() : SR(0), CR(0), FR(0), FG(0), FB(0), OR(0), OG(0), OB(0), OT(0), V(0), S(0) { }
+
+EnemyConfig::EnemyConfig() : SR(0), CR(0), OR(0), OG(0), OB(0), OT(0), VMIN(0), VMAX(0), L(0), SI(0), SMIN(0), SMAX(0) { }
+
+BulletConfig::BulletConfig() : SR(0), CR(0), FR(0), FG(0), FB(0), OR(0), OG(0), OB(0), OT(0), V(0), L(0), S(0) { }
+
 
 WindowConfig::WindowConfig(const std::vector<std::string>& data) {
 	try {
 		W = stoi(data.at(1));
-		L = stoi(data.at(2));
+		H = stoi(data.at(2));
 		FL = stoi(data.at(3));
 		FS = stoi(data.at(4));
 	}
