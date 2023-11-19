@@ -1,5 +1,8 @@
+#include <cmath>
+
 #include "Game.h"
 #include "Util.h"
+
 
 Game::Game(const std::string& config) {
 	m_configReader.readFromFile(config);
@@ -17,14 +20,11 @@ void Game::init() {
 }
 
 void Game::run() {
-	// TODO: add pause functionality in here
-	//		 some systems should function while paused (rendering)
-	//		 some systems shouldn't (movement / input)
-
 	while (m_running) {
 		if (!m_paused) {
 			m_entities.update();
 			sEnemySpawner();
+			sLifespan();
 			sMovement();
 			sCollision();
 
@@ -33,7 +33,6 @@ void Game::run() {
 
 		sUserInput();
 		sRender();
-
 	}
 }
 
@@ -86,12 +85,30 @@ void Game::spawnEnemy() {
 }
 
 void Game::spawnSmallEnemies(std::shared_ptr<Entity> e) {
-	// TODO: spawn small enemies at the location of the input enemy e
+	ConfigVariant eVariant = m_configReader.getData(ConfigReader::Type::Enemy);
+	EnemyConfig eConfig = std::get<EnemyConfig>(eVariant);
 
-	// when we create the smaller enemy, we have to read the values of the original enemy
-	// - spawn a number of small enemies equal to the vertices of the original enemy
-	// - set each small enemy to the same color as the original, half the size
-	// - small enemies are worth the double points of the original enemy
+	size_t enemiesCount = e->cShape->shape.getPointCount();
+	float speed = Util::generateRandomValFromRange((float) eConfig.SMIN, (float) eConfig.SMAX);
+	float outInterval = 360.0f / enemiesCount;
+
+	sf::Color fillColor = e->cShape->shape.getFillColor();
+	sf::Color outlineColor = e->cShape->shape.getOutlineColor();
+
+	for (int i = 1; i <= enemiesCount; i++) {
+		std::shared_ptr<Entity> entity = m_entities.addEntity("small_enemies");
+
+		float angle = outInterval * i;
+		float angleRadians = angle * (3.14f / 180.0f);
+
+		Vec2 velocity(speed * cos(angleRadians), speed * sin(angleRadians));
+		velocity.normalize();
+
+		entity->cShape = std::make_shared<CShape>(eConfig.SR / 2, enemiesCount, fillColor, outlineColor, eConfig.OT);
+		entity->cLifespan = std::make_shared<CLifespan>(eConfig.L, eConfig.L);
+		entity->cCollision = std::make_shared<CCollision>(eConfig.CR / 2);
+		entity->cTransform = std::make_shared<CTransform>(int(outInterval * i) % 360, e->cTransform->pos, velocity);
+	}
 }
 
 void Game::spawnBullet(std::shared_ptr<Entity> entity, const Vec2& target) {
@@ -117,7 +134,7 @@ void Game::spawnBullet(std::shared_ptr<Entity> entity, const Vec2& target) {
 }
 
 void Game::spawnSpecialWeapon(std::shared_ptr<Entity> entity) {
-
+	
 }
 
 void Game::sMovement() {
@@ -149,20 +166,37 @@ void Game::sMovement() {
 		e->cTransform->pos.x += e->cTransform->velocity.x;
 		e->cTransform->pos.y += e->cTransform->velocity.y;
 	}
+
+	// small enemy movement
+	for (std::shared_ptr<Entity>& e : m_entities.getEntities("small_enemies")) {
+		e->cTransform->pos.x += e->cTransform->velocity.x;
+		e->cTransform->pos.y += e->cTransform->velocity.y;
+	}
 }
 
 void Game::sLifespan() {
-	// TODO: implement all the lifespan functionality
+	for (std::shared_ptr<Entity>& e : m_entities.getEntities()) {
+		if (!e->cLifespan) continue;
 
-	/**
-	* for all the entities
-	*		- if the entity has no lifespan component, skip it
-	*		- if entity has > 0 remaining lifespan, substract 1
-	*		- if it has lifespan and is alive
-	*			scale its alpha channel properly
-	*		- if it has lifespan and its time is up
-	*			destory the entity
-	*/
+		if (e->cLifespan->remaining > 0 && e->isActive()) {
+			e->cLifespan->remaining--;
+
+			sf::Uint8 alpha = ((float) e->cLifespan->remaining / e->cLifespan->total) * 180;
+
+			sf::Color color = e->cShape->shape.getFillColor();
+			color.a = alpha;
+
+			sf::Color outlineColor = e->cShape->shape.getOutlineColor();
+			outlineColor.a = alpha;
+
+			e->cShape->shape.setFillColor(color);
+			e->cShape->shape.setOutlineColor(color);
+		}
+		else {
+			e->destroy();
+		}
+	}
+
 }
 
 void Game::sCollision() {
@@ -214,6 +248,7 @@ void Game::sCollision() {
 			if (dist <= bullet->cCollision->radius + enemy->cCollision->radius) {
 				enemy->destroy();
 				bullet->destroy();
+				spawnSmallEnemies(enemy);
 			}
 		}
 	}
