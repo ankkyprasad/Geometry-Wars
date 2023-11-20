@@ -133,8 +133,25 @@ void Game::spawnBullet(std::shared_ptr<Entity> entity, const Vec2& target) {
 	e->cLifespan = std::make_shared<CLifespan>(bConfig.L, bConfig.L);
 }
 
-void Game::spawnSpecialWeapon(std::shared_ptr<Entity> entity) {
-	
+void Game::spawnSpecialWeapon(std::shared_ptr<Entity> e) {
+	ConfigVariant bVariant = m_configReader.getData(ConfigReader::Type::Bullet);
+	BulletConfig bConfig = std::get<BulletConfig>(bVariant);
+
+	const sf::Color fillColor = sf::Color::Red;
+	const sf::Color outlineColor = sf::Color::Red;
+	const float speed = 10;
+	const float outInterval = 20;
+
+	for (int i = 1; i <= 18; i++) {
+		std::shared_ptr<Entity> entity = m_entities.addEntity("bullet");
+		float angle = outInterval * i * (3.14f / 180.0f);
+		Vec2 velocity(speed * cos(angle), speed * sin(angle));
+
+		entity->cShape = std::make_shared<CShape>(bConfig.SR, bConfig.V, fillColor, outlineColor, bConfig.OT);
+		entity->cCollision = std::make_shared<CCollision>(bConfig.CR);
+		entity->cTransform = std::make_shared<CTransform>(0.0f, e->cTransform->pos, velocity);
+		entity->cLifespan = std::make_shared<CLifespan>(bConfig.L, bConfig.L);
+	}
 }
 
 void Game::sMovement() {
@@ -235,6 +252,15 @@ void Game::sCollision() {
 	// bullet collision with walls
 	for (std::shared_ptr<Entity>& bullet : m_entities.getEntities("bullet")) {
 		if (bullet->cCollision->radius + bullet->cTransform->pos.x > m_window.getSize().x) {
+			bullet->destroy();
+		} 
+		else if (bullet->cCollision->radius + bullet->cTransform->pos.y > m_window.getSize().y) {
+			bullet->destroy();
+		} 
+		else if (bullet->cTransform->pos.x <= 0 - bullet->cCollision->radius) {
+			bullet->destroy();
+		}
+		else if (bullet->cTransform->pos.y <= 0 - bullet->cCollision->radius) {
 			bullet->destroy();
 		}
 	}
@@ -357,8 +383,7 @@ void Game::sUserInput() {
 			}
 
 			if (event.mouseButton.button == sf::Mouse::Right) {
-				std::cout << "right button at (" << event.mouseButton.x << ", " << event.mouseButton.y << ")\n";
-				// call spawnSpecialWeapon here
+				spawnSpecialWeapon(m_player);
 			}
 		}
 	}
